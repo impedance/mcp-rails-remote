@@ -4,6 +4,7 @@
 require "json"
 require "dotenv/load"
 require "net/ssh"
+require "shellwords"
 
 STDOUT.sync = true
 STDERR.sync = true
@@ -94,6 +95,98 @@ module Adapters
       stdout, stderr, ec = ssh_exec!(cmd)
       raise "Exit #{ec}: #{stderr}" unless ec == 0
       [{ "type" => "text", "text" => stdout.strip }]
+    end
+  end
+
+  class Codex < Base
+    DEFAULT_MAX_LINES = 500
+
+    def tools
+      [
+        {
+          "name" => "journalctl_tail",
+          "description" => "Читает журналы systemd через journalctl на удалённой машине (опциональный адаптер Codex CLI).",
+          "inputSchema" => {
+            "type" => "object",
+            "properties" => {
+              "unit" => { "type" => "string" },
+              "lines" => { "type" => "integer", "minimum" => 1 },
+              "since" => { "type" => "string" },
+              "priority" => { "type" => "string" },
+              "grep" => { "type" => "string" },
+              "reverse" => { "type" => "boolean" }
+            },
+            "additionalProperties" => false
+          }
+        }
+      ]
+    end
+
+    def handle(name, args)
+      return nil unless name == "journalctl_tail"
+
+      params = args || {}
+      cmd_parts = build_command(params)
+      stdout, stderr, ec = ssh_exec!(cmd_parts.map { |part| Shellwords.escape(part) }.join(" "))
+      raise "journalctl failed (#{ec}): #{stderr}" unless ec == 0
+      text = stdout.strip
+      text = "[journalctl] No output" if text.empty?
+      [{ "type" => "text", "text" => text }]
+    end
+
+    private
+
+    def build_command(params)
+      lines = clamp_lines(params["lines"])
+      parts = ["journalctl", "--no-pager", "-n", lines.to_s]
+
+      unit = safe_string(params["unit"])
+      parts += ["-u", unit] unless unit.empty?
+
+      since = safe_string(params["since"])
+      parts += ["--since", since] unless since.empty?
+
+      priority = safe_string(params["priority"])
+      parts += ["-p", priority] unless priority.empty?
+
+      grep = safe_string(params["grep"])
+      parts += ["--grep", grep] unless grep.empty?
+
+      parts << "-r" if truthy?(params["reverse"])
+      parts
+    end
+
+    def clamp_lines(lines)
+      int_lines = Integer(lines || default_max_lines)
+      [[int_lines, 1].max, default_max_lines].min
+    rescue ArgumentError, TypeError
+      default_max_lines
+    end
+
+    def default_max_lines
+      raw = ENV["JOURNALCTL_MAX_LINES"]
+      return DEFAULT_MAX_LINES unless raw
+      Integer(raw)
+    rescue ArgumentError
+      warn "[MCP] Invalid JOURNALCTL_MAX_LINES=#{raw.inspect}, using #{DEFAULT_MAX_LINES}"
+      DEFAULT_MAX_LINES
+    end
+
+    def safe_string(value)
+      value.to_s.strip
+    end
+
+    def truthy?(value)
+      case value
+      when true
+        true
+      when false, nil
+        false
+      when String
+        %w[1 true yes y].include?(value.strip.downcase)
+      else
+        !!value
+      end
     end
   end
 end
@@ -223,7 +316,7 @@ loop do
       response(id: id, result: result)
 
     when "tools/list"
-      response(id: id, result: { "tools" => TOOLS })
+      response(id: id, result: { "tools" => all_tools })
 
     when "tools/call"
       params = msg["params"] || {}

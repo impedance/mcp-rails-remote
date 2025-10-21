@@ -8,6 +8,7 @@ The MCP entrypoint lives in `server.rb`, which wires JSON-RPC handling to remote
 - `ruby server.rb` — start the MCP server using the credentials provided in `.env`.
 - `USE_LOGIN_SHELL=true ruby server.rb` — opt into a login shell when the remote host requires full profile initialization.
 - `RAILS_ENV=production ruby server.rb` — override the remote Rails environment without editing `.env`.
+- `MCP_ADAPTERS=codex ruby server.rb` — включи адаптер Codex CLI, чтобы получить утилиты для чтения `journalctl`.
 Use `ctrl+c` to stop the process; logs and remote command output stream to STDOUT/ERR.
 
 ## Coding Style & Naming Conventions
@@ -20,4 +21,4 @@ There is no automated suite yet; treat manual exercises against the remote Rails
 Write English, imperative commit subjects (`Add connection timeout handling`) and group related edits logically. For PRs, describe the behavior change, note any remote environments touched, and include sample command output that proves the flow (e.g., the JSON returned by `user_last`). Link tracking issues when available and highlight follow-up work so reviewers can reason about rollout.
 
 ## Security & Configuration Tips
-Never commit `.env` or SSH material; rely on local secrets management instead. Rotate keys when collaborating, and scope remote credentials to the ManageIQ instance directory specified by `APP_DIR`. Validate new code paths against a staging ManageIQ host before pointing production credentials at an updated agent.
+Never commit `.env` or SSH material; rely on local secrets management instead. Rotate keys when collaborating, and scope remote credentials to the ManageIQ instance directory specified by `APP_DIR`. When включён адаптер Codex, контролируй `journalctl` доступ через `MCP_ADAPTERS` и ограничивай объём вывода переменной `JOURNALCTL_MAX_LINES`. Validate new code paths against a staging ManageIQ host before pointing production credentials at an updated agent.
