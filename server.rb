@@ -99,9 +99,7 @@ module Adapters
         end
       RUBY
       cmd = build_rails_runner_cmd(code)
-      log "Core adapter executing user_last via SSH"
       stdout, stderr, ec = ssh_exec!(cmd)
-      log "Core adapter user_last exit=#{ec}, stdout=#{truncate_for_log(stdout)}, stderr=#{truncate_for_log(stderr)}"
       raise "Exit #{ec}: #{stderr}" unless ec == 0
       [{ "type" => "text", "text" => stdout.strip }]
     end
@@ -109,9 +107,7 @@ module Adapters
     def execute_rails_exec(args)
       code = args["code"] || ""
       cmd = build_rails_runner_cmd(code)
-      log "Core adapter executing rails_exec: code=#{truncate_for_log(code, 120)}"
       stdout, stderr, ec = ssh_exec!(cmd)
-      log "Core adapter rails_exec exit=#{ec}, stdout=#{truncate_for_log(stdout)}, stderr=#{truncate_for_log(stderr)}"
       raise "Exit #{ec}: #{stderr}" unless ec == 0
       [{ "type" => "text", "text" => stdout.strip }]
     end
@@ -145,10 +141,8 @@ module Adapters
       return nil unless name == "journalctl_tail"
 
       params = args || {}
-      log "Codex adapter journalctl_tail params=#{params.inspect}"
       cmd_parts = build_command(params)
       stdout, stderr, ec = ssh_exec!(cmd_parts.map { |part| Shellwords.escape(part) }.join(" "))
-      log "Codex adapter journalctl_tail exit=#{ec}, stdout=#{truncate_for_log(stdout)}, stderr=#{truncate_for_log(stderr)}"
       raise "journalctl failed (#{ec}): #{stderr}" unless ec == 0
       text = stdout.strip
       text = "[journalctl] No output" if text.empty?
@@ -280,11 +274,8 @@ def build_rails_runner_cmd(code)
   base = "cd #{APP_DIR} && RAILS_ENV=#{RAILS_ENV} #{RAILS_BIN} r '#{safe}'" if RAILS_ENV && !RAILS_ENV.empty?
 
   if USE_LOGIN_SHELL
-    cmd = %(bash -lc "#{base.gsub('"', '\"')}")
-    log "Built rails runner command (login shell): #{cmd}"
-    cmd
+    %(bash -lc "#{base.gsub('"', '\"')}")
   else
-    log "Built rails runner command: #{base}"
     base
   end
 end
@@ -296,18 +287,15 @@ end
 def build_active_adapters
   adapters = [Adapters::Core.new]
   names = resolve_adapter_names(ENV["MCP_ADAPTERS"] || ENV["MCP_ADAPTER"])
-  log "Requested adapters: #{names.empty? ? '(none)' : names.inspect}"
   names.each do |name|
     adapter = case name
               when "codex"
                 Adapters::Codex.new if defined?(Adapters::Codex)
               else
-                log "Unknown adapter #{name}, ignoring"
                 nil
               end
     adapters << adapter if adapter
   end
-  log "Active adapters: #{adapters.map { |a| a.class.name }.join(', ')}"
   adapters
 end
 
@@ -318,7 +306,6 @@ def all_tools
 end
 
 def handle_tool_call(name, args)
-  log "Handling tool call: #{name} with args=#{args.inspect}"
   ACTIVE_ADAPTERS.each do |adapter|
     result = adapter.handle(name, args)
     return result if result
@@ -327,7 +314,7 @@ def handle_tool_call(name, args)
 end
 
 # === MCP main loop ===
-log "Server boot complete; entering MCP loop and waiting for requests"
+log "Server boot complete; entering MCP loop"
 
 loop do
   msg = read_json_line
@@ -335,7 +322,6 @@ loop do
     log "EOF reached on STDIN, shutting down MCP loop"
     break
   end
-  log "Received message: method=#{msg['method'].inspect} id=#{msg['id'].inspect}"
   break unless msg.is_a?(Hash)
 
   method = msg["method"]
@@ -344,23 +330,22 @@ loop do
   begin
     case method
     when "initialize" # MCP handshake
-      log "Processing initialize request"
+      log "Received initialize request"
       result = {
         "protocolVersion" => "2024-11-05", # актуальная строка версии MCP; при несовпадении клиент сам подскажет
         "serverInfo" => SERVER_INFO,
         "capabilities" => { "tools" => {} }
       }
       response(id: id, result: result)
+      log "Handshake complete"
 
     when "tools/list"
-      log "Processing tools/list request"
       response(id: id, result: { "tools" => all_tools })
 
     when "tools/call"
       params = msg["params"] || {}
       name = params["name"]
       arguments = params["arguments"] || {}
-      log "Dispatching tools/call to #{name}"
       content = handle_tool_call(name, arguments)
       response(id: id, result: { "content" => content })
 
