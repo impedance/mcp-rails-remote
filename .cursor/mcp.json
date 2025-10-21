@@ -4,9 +4,6 @@
       "command": "ruby",
       "args": ["./server.rb"],
       "env": {
-        "SSH_HOST": "10.20.7.120",
-        "SSH_USER": "root",
-        "SSH_KEY_PATH": "/home/p.sutugin/.ssh/id_rsa",
         "APP_DIR": "/var/www/miq/vmdb",
         "RAILS_BIN": "bin/rails",
         "RAILS_ENV": "production",
